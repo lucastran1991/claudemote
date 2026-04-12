@@ -95,6 +95,39 @@ check_envs() {
 
 # ── Bootstrap (one-time, interactive) ────────────────────────────────────────
 
+install_pnpm_if_missing() {
+  if command -v pnpm >/dev/null 2>&1; then
+    info "pnpm already installed: $(pnpm --version 2>&1)"
+    return 0
+  fi
+  log "pnpm not found — installing via corepack..."
+
+  # Strategy 1: corepack (ships with Node ≥16.10, the modern path)
+  if command -v corepack >/dev/null 2>&1; then
+    if sudo corepack enable >/dev/null 2>&1 \
+       && corepack prepare pnpm@latest --activate >/dev/null 2>&1; then
+      log "pnpm installed via corepack: $(pnpm --version 2>&1)"
+      return 0
+    fi
+    warn "corepack install failed — falling back to npm global install."
+  else
+    warn "corepack not present — falling back to npm global install."
+  fi
+
+  # Strategy 2: npm global install
+  if command -v npm >/dev/null 2>&1; then
+    if sudo npm install -g pnpm >/dev/null 2>&1; then
+      log "pnpm installed via npm: $(pnpm --version 2>&1)"
+      return 0
+    fi
+  fi
+
+  err "Could not install pnpm automatically. Install manually:"
+  err "  sudo corepack enable && corepack prepare pnpm@latest --activate"
+  err "  OR: sudo npm install -g pnpm"
+  exit 1
+}
+
 install_caddy_if_missing() {
   if command -v caddy >/dev/null 2>&1; then
     info "Caddy already installed: $(caddy version 2>&1 | head -1)"
@@ -252,11 +285,13 @@ EOF
 bootstrap() {
   log "First-run bootstrap starting..."
   # Hard prereqs the user MUST install themselves (no auto-install for these)
-  require_bin go node pnpm pm2 claude openssl
-  # Caddy: try to auto-install if missing
+  require_bin go node pm2 claude openssl
+  # pnpm: try corepack/npm install if missing
+  install_pnpm_if_missing
+  # Caddy: try yum/dnf+COPR or GitHub binary if missing
   install_caddy_if_missing
   # Now everything required for deploy must be present
-  require_bin caddy
+  require_bin pnpm caddy
 
   bootstrap_backend_env
   bootstrap_frontend_env
