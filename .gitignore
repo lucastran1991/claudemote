@@ -30,3 +30,25 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Env files — never commit secrets
+**/.env
+**/.env.local
+# Templates are committed (no secrets)
+!**/.env.example
+!**/.env.local.template
+
+# Compiled backend binary
+backend/server
+
+# SQLite database files
+backend/claudemote.db*
+*.db-shm
+*.db-wal
+
+# Next.js build output and dependencies
+frontend/.next/
+frontend/node_modules/
+
+# pm2 logs
+logs/
