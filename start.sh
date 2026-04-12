@@ -239,13 +239,56 @@ bootstrap_frontend_env() {
   log "frontend/.env.local written (AUTH_SECRET generated)."
 }
 
+detect_ec2_public_ip() {
+  # Detect the host's public IPv4 for the Caddy hostname suggestion.
+  # Strategy 1: EC2 IMDSv2 (AL2023 default — requires session token).
+  # Strategy 2: EC2 IMDSv1 (older AMIs that allow tokenless reads).
+  # Strategy 3: External lookup via api.ipify.org (works off-EC2 too).
+  # Each call has a short timeout so we never block bootstrap waiting on a
+  # network that does not exist.
+  local token ip=""
+  token="$(curl -s -X PUT --max-time 2 \
+    "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)"
+  if [[ -n "$token" ]]; then
+    ip="$(curl -s --max-time 2 \
+      -H "X-aws-ec2-metadata-token: $token" \
+      http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  fi
+  if [[ -z "$ip" ]]; then
+    ip="$(curl -s --max-time 2 \
+      http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  fi
+  if [[ -z "$ip" ]]; then
+    ip="$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || true)"
+  fi
+  echo "$ip"
+}
+
 bootstrap_caddy_hostname() {
   if ! grep -q "claudemote.example.com" Caddyfile 2>/dev/null; then
     info "Caddyfile hostname already customized — skipping."
     return 0
   fi
+
+  # Suggest <public-ip>.nip.io if we can detect a public IP.
+  # nip.io is a free wildcard DNS service that resolves any IP-encoded
+  # hostname back to that IP, so Caddy CAN obtain a real Let's Encrypt cert
+  # for it without the user owning a domain. Raw IPs cannot get certs from
+  # public CAs, so we never suggest the bare IP itself.
+  local detected_ip="" suggested=""
+  detected_ip="$(detect_ec2_public_ip)"
+  if [[ -n "$detected_ip" ]]; then
+    suggested="${detected_ip}.nip.io"
+    info "Detected public IP: ${detected_ip}"
+    info "  Suggesting ${suggested} (nip.io wildcard DNS — real Let's Encrypt cert,"
+    info "  no domain registration needed). Press Enter to accept."
+  else
+    info "Could not auto-detect public IP. Supply a hostname manually or leave blank."
+  fi
+
   local hostname
-  hostname="$(prompt 'Public hostname for Caddy (e.g. claudemote.foo.com — blank to skip)' '')"
+  hostname="$(prompt 'Caddy hostname (blank to leave Caddyfile unchanged)' "$suggested")"
   if [[ -z "$hostname" ]]; then
     warn "Caddyfile hostname unchanged. Edit before exposing publicly."
     return 0
