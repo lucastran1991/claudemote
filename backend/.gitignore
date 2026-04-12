@@ -2,5 +2,8 @@
 *.db
 *.db-shm
 *.db-wal
-server
-create-admin
+# Anchor binary excludes to backend/ root only — without the leading slash
+# these patterns also matched cmd/server/ and cmd/create-admin/ directories,
+# silently dropping their main.go files from the initial commit.
+/server
+/create-admin
