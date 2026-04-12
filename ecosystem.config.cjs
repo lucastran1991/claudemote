@@ -12,8 +12,10 @@ module.exports = {
       env: {
         PORT: 8080,
         WORKER_COUNT: 2,
-        // Path to the git repo Claude Code should work inside
-        WORK_DIR: "/opt/claudemote",
+        // Path to the git repo Claude Code should operate on. Default = the
+        // claudemote install dir itself (self-hosting). Override by exporting
+        // WORK_DIR in the shell before `pm2 start`.
+        WORK_DIR: process.env.WORK_DIR || "/opt/atomiton/claudemote",
         CLAUDE_BIN: "/usr/local/bin/claude",
         CLAUDE_DEFAULT_MODEL: "claude-sonnet-4-6",
         CLAUDE_PERMISSION_MODE: "bypassPermissions",

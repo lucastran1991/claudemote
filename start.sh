@@ -193,24 +193,22 @@ bootstrap_backend_env() {
   local jwt workdir
   jwt="$(openssl rand -hex 32)"
 
-  # Explain WORK_DIR before prompting — common confusion is that this is the
-  # claudemote install dir, but it is actually the TARGET repo Claude operates on.
+  # WORK_DIR is the codebase Claude jobs will read/write/run commands in.
+  # Default = self-hosting mode: claudemote operates on its own source.
+  # Press Enter to accept the default, or supply an absolute path to a
+  # different repo on this host.
   echo
-  info "WORK_DIR is the TARGET repo Claude jobs will read/write/run commands in."
-  info "  It is NOT this claudemote install directory ($ROOT)."
-  info "  Example: /opt/atomiton/playwright-demo"
+  info "WORK_DIR is the repo Claude jobs will read/write/run commands in."
+  info "  Default = $ROOT (self-hosting: claudemote operates on its own source)."
+  info "  Override only if you want Claude to operate on a different repo."
   echo
-  workdir="$(prompt 'Absolute path to TARGET repo (WORK_DIR)' '')"
+  workdir="$(prompt 'WORK_DIR' "$ROOT")"
   if [[ -z "$workdir" || ! -d "$workdir" ]]; then
     err "WORK_DIR must be an existing absolute path."
     exit 1
   fi
   if [[ "$workdir" == "$ROOT" ]]; then
-    warn "WORK_DIR equals the claudemote install dir — Claude will edit the controller's"
-    warn "  own source code while it's running. This is risky. Confirm to proceed."
-    local confirm
-    confirm="$(prompt 'Type YES to confirm (anything else aborts)' '')"
-    [[ "$confirm" == "YES" ]] || { err "Aborted."; exit 1; }
+    info "Self-hosting mode: claudemote will operate on its own source tree."
   fi
   # Portable in-place sed (creates .bak on both macOS and GNU; cleaned after)
   sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${jwt}|" backend/.env
