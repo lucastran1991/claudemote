@@ -190,8 +190,18 @@ bootstrap_backend_env() {
 
   log "Generating backend/.env..."
   cp backend/.env.example backend/.env
-  local jwt workdir
+  local jwt workdir claude_bin
   jwt="$(openssl rand -hex 32)"
+
+  # Auto-detect claude binary — writes absolute path so pm2/systemd don't
+  # need a populated PATH at runtime.
+  claude_bin="$(command -v claude || true)"
+  if [[ -z "$claude_bin" ]]; then
+    err "claude binary not found in PATH. Install Claude Code before bootstrapping."
+    exit 1
+  fi
+  # Resolve symlinks and ~ so the written path is fully absolute.
+  claude_bin="$(readlink -f "$claude_bin" 2>/dev/null || echo "$claude_bin")"
 
   # WORK_DIR is the codebase Claude jobs will read/write/run commands in.
   # Default = self-hosting mode: claudemote operates on its own source.
@@ -213,8 +223,9 @@ bootstrap_backend_env() {
   # Portable in-place sed (creates .bak on both macOS and GNU; cleaned after)
   sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${jwt}|" backend/.env
   sed -i.bak "s|^WORK_DIR=.*|WORK_DIR=${workdir}|" backend/.env
+  sed -i.bak "s|^CLAUDE_BIN=.*|CLAUDE_BIN=${claude_bin}|" backend/.env
   rm -f backend/.env.bak
-  log "backend/.env written (JWT_SECRET generated, WORK_DIR=${workdir})."
+  log "backend/.env written (JWT_SECRET generated, WORK_DIR=${workdir}, CLAUDE_BIN=${claude_bin})."
 }
 
 bootstrap_frontend_env() {

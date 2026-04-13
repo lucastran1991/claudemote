@@ -16,7 +16,7 @@ module.exports = {
         // claudemote install dir itself (self-hosting). Override by exporting
         // WORK_DIR in the shell before `pm2 start`.
         WORK_DIR: process.env.WORK_DIR || "/opt/atomiton/claudemote",
-        CLAUDE_BIN: "/usr/local/bin/claude",
+        // CLAUDE_BIN is read from backend/.env (auto-detected by start.sh bootstrap).
         CLAUDE_DEFAULT_MODEL: "claude-sonnet-4-6",
         CLAUDE_PERMISSION_MODE: "bypassPermissions",
         JOB_TIMEOUT_MIN: 30,
