@@ -247,16 +247,25 @@ deploy_local() {
   log "Web  → http://localhost:${WEB_PORT}"
   echo ""
 
-  # Start backend with --verbose for local debugging, inject PORT from cfg
-  ( cd backend && PORT="${API_PORT}" ./server --verbose ) &
+  # Start backend — exec replaces subshell so kill reaches the Go process
+  ( cd backend && exec env PORT="${API_PORT}" ./server --verbose ) &
   local api_pid=$!
 
   # Start frontend dev server with HMR (no prior build needed)
-  ( cd frontend && PORT="${WEB_PORT}" pnpm dev ) &
+  ( cd frontend && exec env PORT="${WEB_PORT}" pnpm dev ) &
   local web_pid=$!
 
-  # Clean shutdown on Ctrl+C — set +e so wait doesn't abort on child exit
-  trap 'log "Shutting down..."; kill $api_pid $web_pid 2>/dev/null; wait; log "Stopped."; exit 0' INT TERM
+  # Clean shutdown on Ctrl+C — kill process groups, reset trap to default
+  # so a second Ctrl+C force-kills immediately
+  cleanup() {
+    trap - INT TERM  # reset to default — next Ctrl+C kills instantly
+    log "Shutting down..."
+    kill "$api_pid" "$web_pid" 2>/dev/null
+    wait "$api_pid" "$web_pid" 2>/dev/null
+    log "Stopped."
+    exit 0
+  }
+  trap cleanup INT TERM
 
   set +e
   wait
