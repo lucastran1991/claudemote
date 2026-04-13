@@ -2,9 +2,9 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { signOut } from "next-auth/react"
 import { LayoutDashboard, PlusSquare, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { logoutAction } from "@/lib/actions/auth"
 
 const navItems = [
   { href: "/dashboard/jobs", label: "Jobs", icon: LayoutDashboard },
@@ -43,14 +43,19 @@ export function NavBar() {
           ))}
         </nav>
 
-        {/* Logout */}
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors"
-        >
-          <LogOut className="h-4 w-4" />
-          Logout
-        </button>
+        {/* Logout — server action via form ensures NextAuth v5 properly
+            clears the session cookie and redirects. The client-side
+            signOut helper from next-auth/react is unreliable on the
+            v5 beta + Next.js 16 combo. */}
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </form>
       </div>
     </header>
   )
