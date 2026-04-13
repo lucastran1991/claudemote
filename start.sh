@@ -2,14 +2,15 @@
 # claudemote deploy/boot script
 #
 # Usage:
-#   ./start.sh                              Recurring deploy (build + reload pm2).
-#   ./start.sh --bootstrap                  First-run 3-phase setup.
+#   ./start.sh                              Local dev (build + foreground, Ctrl+C).
+#   ./start.sh --prod                       EC2 deploy (build + reload pm2).
+#   ./start.sh --bootstrap                  First-run 3-phase EC2 setup.
 #   ./start.sh --bootstrap --force          Wipe .env files, then bootstrap.
 #   ./start.sh --bootstrap --smoke-test     Bootstrap + end-to-end job test.
 #   ./start.sh --help                       Show this help.
 #
-# Run --bootstrap once per fresh EC2; thereafter run plain ./start.sh after
-# every `git pull`.
+# Default (no flags) = local dev mode for macOS. Use --prod on EC2 after
+# every `git pull`. Use --bootstrap once per fresh EC2 instance.
 #
 # Bootstrap is split into 3 hard-gated phases:
 #   Phase 1 DISCOVER    — detect/install tools, verify, collect all inputs.
@@ -43,7 +44,7 @@ WEB_PORT="$(cfg '.web.port')"
 CFG_HOSTNAME="$(cfg '.hostname')"
 
 # ── Constants ────────────────────────────────────────────────────────────────
-readonly BS_PROD_DB_PATH="/var/lib/claudemote/claudemote.db"
+readonly BS_PROD_DB_PATH="$(cfg '.db_path')"
 readonly CADDY_VERSION="2.8.4"
 
 # ── Flags (set by dispatch parser) ───────────────────────────────────────────
@@ -212,12 +213,6 @@ print_endpoints() {
   if [[ -n "$BS_HOSTNAME" ]]; then
     log "Public → https://${BS_HOSTNAME}"
   fi
-  if [[ -n "$BS_ADMIN_USER" ]]; then
-    log "Admin → ${BS_ADMIN_USER} / ${BS_ADMIN_PASS}"
-    if [[ "$BS_ADMIN_PASS" == "Password@123" ]]; then
-      warn "USING DEFAULT ADMIN CREDENTIALS — change password after first login!"
-    fi
-  fi
 }
 
 deploy() {
@@ -234,7 +229,7 @@ deploy_local() {
   check_binaries_local
   check_envs
   build_backend
-  build_frontend
+  # Skip build_frontend — pnpm dev compiles on-the-fly with HMR
 
   log "Starting locally (foreground, Ctrl+C to stop)..."
   echo ""
@@ -242,18 +237,20 @@ deploy_local() {
   log "Web  → http://localhost:${WEB_PORT}"
   echo ""
 
-  # Start backend with --verbose for local debugging
-  ( cd backend && ./server --verbose ) &
+  # Start backend with --verbose for local debugging, inject PORT from cfg
+  ( cd backend && PORT="${API_PORT}" ./server --verbose ) &
   local api_pid=$!
 
-  # Start frontend via pnpm start (uses PORT from env or package.json)
-  ( cd frontend && PORT="${WEB_PORT}" pnpm start ) &
+  # Start frontend dev server with HMR (no prior build needed)
+  ( cd frontend && PORT="${WEB_PORT}" pnpm dev ) &
   local web_pid=$!
 
-  # Clean shutdown on Ctrl+C
+  # Clean shutdown on Ctrl+C — set +e so wait doesn't abort on child exit
   trap 'log "Shutting down..."; kill $api_pid $web_pid 2>/dev/null; wait; log "Stopped."; exit 0' INT TERM
 
+  set +e
   wait
+  set -e
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -543,7 +540,7 @@ bs_collect_inputs() {
     NEXTAUTH_URL  = $BS_NEXTAUTH_URL
     BACKEND_URL   = $BS_BACKEND_URL
     Admin user    = $BS_ADMIN_USER
-    Admin pass    = $BS_ADMIN_PASS
+    Admin pass    = ****
     DB path       = $BS_PROD_DB_PATH
     CLAUDE_BIN    = $BS_CLAUDE_BIN
 REVIEW
@@ -641,9 +638,9 @@ bs_generate_caddyfile() {
       "Caddyfile.template not found at $template" 20
   fi
   log "Generating Caddyfile from template (hostname=${BS_HOSTNAME})..."
-  sed -e "s/{{HOSTNAME}}/${BS_HOSTNAME}/g" \
-      -e "s/{{API_PORT}}/${API_PORT}/g" \
-      -e "s/{{WEB_PORT}}/${WEB_PORT}/g" \
+  sed -e "s|{{HOSTNAME}}|${BS_HOSTNAME}|g" \
+      -e "s|{{API_PORT}}|${API_PORT}|g" \
+      -e "s|{{WEB_PORT}}|${WEB_PORT}|g" \
       "$template" | sudo tee "$output" >/dev/null
   # Capture stderr so the actual caddy error is visible to the operator
   # instead of a generic "failed validation" message.
