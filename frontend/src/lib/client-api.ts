@@ -7,7 +7,7 @@ import { useCallback } from "react"
 import type { Job, CreateJobRequest } from "@/types/api"
 
 // NEXT_PUBLIC_BACKEND_URL is empty in production (same-origin via Caddy),
-// set to http://localhost:8080 in .env.local for dev.
+// set to http://localhost:<api-port> in .env.local for dev (see system.cfg.json).
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? ""
 
 async function clientFetch<T>(

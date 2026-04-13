@@ -22,7 +22,25 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$ROOT"
 cd "$ROOT"
+
+# ── system.cfg.json — single source of truth for all non-secret config ───────
+CFG_FILE="${SCRIPT_DIR}/system.cfg.json"
+cfg() { jq -r "$1" "$CFG_FILE"; }
+
+# Fail fast if jq is missing — everything below depends on it.
+command -v jq >/dev/null 2>&1 || {
+  echo "ERROR: jq is required but not installed. Install with: sudo apt install jq"
+  exit 1
+}
+
+[[ -f "$CFG_FILE" ]] || { echo "ERROR: $CFG_FILE not found"; exit 1; }
+jq empty "$CFG_FILE" 2>/dev/null || { echo "ERROR: $CFG_FILE is not valid JSON"; exit 1; }
+
+API_PORT="$(cfg '.api.port')"
+WEB_PORT="$(cfg '.web.port')"
+CFG_HOSTNAME="$(cfg '.hostname')"
 
 # ── Constants ────────────────────────────────────────────────────────────────
 readonly BS_PROD_DB_PATH="/var/lib/claudemote/claudemote.db"
@@ -180,8 +198,8 @@ print_endpoints() {
   log "claudemote is running:"
   pm2 ls
   echo ""
-  log "API  → http://localhost:8080/api/health"
-  log "Web  → http://localhost:3000"
+  log "API  → http://localhost:${API_PORT}/api/health"
+  log "Web  → http://localhost:${WEB_PORT}"
   log "Logs → pm2 logs  (or: make logs)"
   if [[ -n "$BS_HOSTNAME" ]]; then
     log "Public → https://${BS_HOSTNAME}"
@@ -460,10 +478,10 @@ bs_collect_inputs() {
   echo
 
   info "3/4 Public URLs"
-  local nextauth_default="http://localhost:3000"
+  local nextauth_default="http://localhost:${WEB_PORT}"
   [[ -n "$BS_HOSTNAME" ]] && nextauth_default="https://${BS_HOSTNAME}"
   BS_NEXTAUTH_URL="$(prompt 'NEXTAUTH_URL (public URL of Next.js app)' "$nextauth_default")"
-  BS_BACKEND_URL="$(prompt 'BACKEND_URL (server-side only)' 'http://localhost:8080')"
+  BS_BACKEND_URL="$(prompt 'BACKEND_URL (server-side only)' "http://localhost:${API_PORT}")"
   echo
 
   info "4/4 Admin credentials"
@@ -581,31 +599,28 @@ bs_write_frontend_env() {
   log "  ✓ frontend/.env.local (NEXTAUTH_URL=${BS_NEXTAUTH_URL})"
 }
 
-bs_write_caddyfile() {
-  [[ -f Caddyfile ]] || \
-    fail_phase "Phase 2/3 Configuration" "write Caddyfile" "./Caddyfile not found in repo" 20
-  if grep -q "claudemote.example.com" Caddyfile 2>/dev/null; then
-    log "Patching ./Caddyfile with hostname ${BS_HOSTNAME}..."
-    sed -i.bak "s|claudemote.example.com|${BS_HOSTNAME}|g" Caddyfile
-    rm -f Caddyfile.bak
-  else
-    info "./Caddyfile already customized — skipping patch."
+bs_generate_caddyfile() {
+  local template="${SCRIPT_DIR}/Caddyfile.template"
+  local output="/etc/caddy/Caddyfile"
+  if [[ ! -f "$template" ]]; then
+    fail_phase "Phase 2/3 Configuration" "generate Caddyfile" \
+      "Caddyfile.template not found at $template" 20
   fi
-}
-
-bs_install_caddy_site() {
-  log "Installing Caddyfile to /etc/caddy/Caddyfile..."
-  sudo cp Caddyfile /etc/caddy/Caddyfile
+  log "Generating Caddyfile from template (hostname=${BS_HOSTNAME})..."
+  sed -e "s/{{HOSTNAME}}/${BS_HOSTNAME}/g" \
+      -e "s/{{API_PORT}}/${API_PORT}/g" \
+      -e "s/{{WEB_PORT}}/${WEB_PORT}/g" \
+      "$template" | sudo tee "$output" >/dev/null
   # Capture stderr so the actual caddy error is visible to the operator
   # instead of a generic "failed validation" message.
   local validate_out
-  if ! validate_out="$(sudo caddy validate --config /etc/caddy/Caddyfile 2>&1)"; then
+  if ! validate_out="$(sudo caddy validate --config "$output" 2>&1)"; then
     err "caddy validate output:"
     echo "$validate_out" >&2
     fail_phase "Phase 2/3 Configuration" "caddy validate" \
-      "/etc/caddy/Caddyfile failed validation (see output above)" 20
+      "${output} failed validation (see output above)" 20
   fi
-  log "  ✓ Caddyfile installed and validated"
+  log "  ✓ Caddyfile generated and validated"
 }
 
 bs_verify_configuration() {
@@ -625,8 +640,7 @@ configure_phase() {
   bs_gen_secrets
   bs_write_backend_env
   bs_write_frontend_env
-  bs_write_caddyfile
-  bs_install_caddy_site
+  bs_generate_caddyfile
   ensure_dirs
   bs_verify_configuration
   checkpoint "Phase 2/3 Configuration"
@@ -649,7 +663,7 @@ bs_create_admin_user() {
 bs_cleanup_pm2_orphans() {
   # Only deletes pm2 processes named EXACTLY 'api' or 'web' — legacy names
   # from earlier deploys that coexist with the new claudemote-* names and
-  # can hold ports 8080/3000.
+  # can hold ports ${API_PORT}/${WEB_PORT}.
   local name
   for name in api web; do
     if pm2 describe "$name" >/dev/null 2>&1; then
@@ -676,17 +690,17 @@ bs_verify_runtime() {
   log "Verifying runtime..."
   sleep 2  # give pm2 processes a moment to bind ports
 
-  if ! curl -fsS http://localhost:8080/api/health >/dev/null 2>&1; then
+  if ! curl -fsS "http://localhost:${API_PORT}/api/health" >/dev/null 2>&1; then
     fail_phase "Phase 3/3 Build & Start" "backend health" \
-      "curl http://localhost:8080/api/health failed" 30
+      "curl http://localhost:${API_PORT}/api/health failed" 30
   fi
   log "  ✓ backend /api/health responding"
 
-  if ! curl -fsI http://localhost:3000 >/dev/null 2>&1; then
+  if ! curl -fsI "http://localhost:${WEB_PORT}" >/dev/null 2>&1; then
     fail_phase "Phase 3/3 Build & Start" "frontend" \
-      "curl http://localhost:3000 failed" 30
+      "curl http://localhost:${WEB_PORT} failed" 30
   fi
-  log "  ✓ frontend responding on :3000"
+  log "  ✓ frontend responding on :${WEB_PORT}"
 
   # Soft check — first-run cert issuance can take 30-60s.
   if curl -fsS --max-time 10 "https://${BS_HOSTNAME}/api/health" >/dev/null 2>&1; then
@@ -704,7 +718,7 @@ bs_verify_end_to_end() {
   log "Running end-to-end smoke test..."
   local token job_id status tries=0
   # Log in to get a JWT
-  token="$(curl -fsS -X POST http://localhost:8080/api/auth/login \
+  token="$(curl -fsS -X POST "http://localhost:${API_PORT}/api/auth/login" \
     -H 'content-type: application/json' \
     -d "{\"username\":\"${BS_ADMIN_USER}\",\"password\":\"${BS_ADMIN_PASS}\"}" 2>/dev/null \
     | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' || true)"
@@ -715,7 +729,7 @@ bs_verify_end_to_end() {
   log "  ✓ login OK"
 
   # Submit a trivial job
-  job_id="$(curl -fsS -X POST http://localhost:8080/api/jobs \
+  job_id="$(curl -fsS -X POST "http://localhost:${API_PORT}/api/jobs" \
     -H "authorization: Bearer $token" \
     -H 'content-type: application/json' \
     -d '{"command":"echo smoke-test ok"}' 2>/dev/null \
@@ -730,7 +744,7 @@ bs_verify_end_to_end() {
   local job_json=""
   while (( tries < 30 )); do
     job_json="$(curl -fsS -H "authorization: Bearer $token" \
-      "http://localhost:8080/api/jobs/${job_id}" 2>/dev/null || true)"
+      "http://localhost:${API_PORT}/api/jobs/${job_id}" 2>/dev/null || true)"
     status="$(printf '%s' "$job_json" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')"
     case "$status" in
       done) log "  ✓ smoke-test job completed (status=done)"; return 0 ;;

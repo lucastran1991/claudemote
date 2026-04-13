@@ -9,15 +9,23 @@ Remote Claude Code controller — submit and monitor Claude Code tasks on an EC2
 - **Proxy**: Caddy — HTTPS termination, SSE passthrough, reverse proxy
 - **Process manager**: pm2 — two processes (`claudemote-api`, `claudemote-web`)
 
+## Configuration
+
+Non-secret config (ports, hostname, worker count, model, job limits, paths) lives in **`system.cfg.json`** at the repo root — this file is committed and is the single source of truth for runtime tunables.
+
+Secrets (JWT signing key, admin credentials, NextAuth secret) stay in `.env` files that are gitignored.
+
+`ecosystem.config.cjs` reads `system.cfg.json` at pm2 startup and injects all values as env vars into the Go backend and Next.js processes. To change a port or any non-secret setting: edit `system.cfg.json`, then run `./start.sh`.
+
 ## Local Development
 
 ```bash
-cp backend/.env.example backend/.env        # fill in JWT_SECRET etc.
-cp frontend/.env.local.template frontend/.env.local
+cp backend/.env.example backend/.env        # fill in JWT_SECRET, ADMIN_PASSWORD_HASH
+cp frontend/.env.local.template frontend/.env.local   # fill in AUTH_SECRET
 make dev                                    # starts both servers without pm2
 ```
 
-API: `http://localhost:8080` | Web: `http://localhost:3000`
+API: `http://localhost:8888` | Web: `http://localhost:8088`
 
 ## Deploy (EC2)
 
@@ -46,16 +54,13 @@ nano Caddyfile
 sudo cp Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 
-# 3. Create env files from templates
+# 3. Create env files from templates and fill in secrets
 cp backend/.env.example backend/.env
-#    Edit backend/.env — set JWT_SECRET, ADMIN_PASSWORD_HASH, DB_PATH, WORK_DIR
+#    Edit backend/.env — set JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD_HASH, CLAUDE_BIN
 cp frontend/.env.local.template frontend/.env.local
-#    Edit frontend/.env.local if needed
+#    Edit frontend/.env.local — set AUTH_SECRET and NEXTAUTH_SECRET
 
-# 3a. Set AUTH_SECRET — required by NextAuth v5 (must be in shell env before ./start.sh)
-export AUTH_SECRET="$(openssl rand -base64 32)"
-#     To persist across reboots, add to /etc/environment or pm2 startup env:
-#     echo "AUTH_SECRET=$AUTH_SECRET" | sudo tee -a /etc/environment
+# 3a. Verify system.cfg.json has the correct hostname, ports, and WORK_DIR for this host
 
 # 4. Configure pm2 to survive reboots
 pm2 startup systemd -u $USER --hp /home/$USER
@@ -98,25 +103,39 @@ make reload
 
 ### Environment variables
 
+Secrets only — all other config is in `system.cfg.json`.
+
 **`backend/.env`** (never commit this file):
 
 | Variable | Description |
 |----------|-------------|
-| `JWT_SECRET` | Random 32+ char string for signing tokens |
-| `ADMIN_PASSWORD_HASH` | bcrypt hash of admin password |
-| `DB_PATH` | SQLite file path (default: `/var/lib/claudemote/claudemote.db`) |
-| `WORK_DIR` | Repo path Claude Code operates inside |
-| `PORT` | API listen port (default: 8080) |
+| `JWT_SECRET` | Random 32+ char string for signing tokens — `openssl rand -hex 32` |
+| `ADMIN_USERNAME` | Admin login username |
+| `ADMIN_PASSWORD_HASH` | bcrypt hash of admin password — set by `make create-admin` |
+| `CLAUDE_BIN` | Absolute path to the `claude` binary — auto-detected by `./start.sh --bootstrap` |
 
 **`frontend/.env.local`** (never commit this file):
 
 | Variable | Description |
 |----------|-------------|
-| `AUTH_SECRET` | Random 32+ char string for NextAuth v5 JWT signing — generate with `openssl rand -base64 32` |
+| `AUTH_SECRET` | Random 32+ char string for NextAuth v5 JWT signing — `openssl rand -base64 32` |
 | `NEXTAUTH_SECRET` | Alias kept for NextAuth v4 compatibility — set to same value as `AUTH_SECRET` |
-| `NEXTAUTH_URL` | Full public URL of the Next.js app (e.g. `https://claudemote.example.com`) |
-| `BACKEND_URL` | Internal URL for server-side Next.js → API calls |
-| `NEXT_PUBLIC_BACKEND_URL` | Public URL (leave empty for same-origin via Caddy) |
+
+**`system.cfg.json`** (committed, non-secret config):
+
+| Key | Description |
+|-----|-------------|
+| `hostname` | Public domain name (used by Caddy and NextAuth URL) |
+| `api.port` | Go API listen port (default: 8888) |
+| `web.port` | Next.js listen port (default: 8088) |
+| `worker.count` | Concurrent Claude Code subprocesses |
+| `worker.model` | Claude model used when job doesn't specify one |
+| `worker.permission_mode` | Claude permission mode (e.g. `bypassPermissions`) |
+| `jobs.timeout_min` | Wall-clock timeout per job in minutes |
+| `jobs.max_cost_usd` | Max API spend per job before auto-cancel |
+| `jobs.log_retention_days` | Days to retain job log rows after completion |
+| `db_path` | SQLite file path |
+| `work_dir` | Repo path Claude Code operates inside |
 
 ### SSE smoke test
 
@@ -138,7 +157,7 @@ curl -N -H "Authorization: Bearer $TOKEN" \
 ## Trust model
 
 Granting someone the admin password gives them **full shell access** to whatever
-`WORK_DIR` is set to, via Claude Code running with `bypassPermissions`.
+`work_dir` is set to in `system.cfg.json`, via Claude Code running with `bypassPermissions`.
 Treat the admin password like a root credential:
 
 - Use a strong random password.

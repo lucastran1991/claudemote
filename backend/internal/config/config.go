@@ -35,7 +35,7 @@ func Load() (*Config, error) {
 	godotenv.Load()
 
 	cfg := &Config{
-		Port:                 getEnv("PORT", "8080"),
+		Port:                 getEnv("PORT", "8888"),
 		WorkerCount:          getEnvInt("WORKER_COUNT", 2),
 		WorkDir:              getEnv("WORK_DIR", ""),
 		ClaudeBin:            getEnv("CLAUDE_BIN", "/usr/local/bin/claude"),
@@ -48,7 +48,7 @@ func Load() (*Config, error) {
 		JWTSecret:            getEnv("JWT_SECRET", ""),
 		AdminUsername:        getEnv("ADMIN_USERNAME", ""),
 		AdminPasswordHash:    getEnv("ADMIN_PASSWORD_HASH", ""),
-		CORSOrigin:           getEnv("CORS_ORIGIN", "http://localhost:3000"),
+		CORSOrigin:           getEnv("CORS_ORIGIN", "http://localhost:8088"),
 	}
 
 	if err := cfg.validate(); err != nil {

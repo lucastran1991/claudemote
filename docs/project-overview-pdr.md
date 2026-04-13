@@ -1,0 +1,374 @@
+# claudemote: Project Overview & PDR
+
+## Project Summary
+
+**claudemote** is a full-stack web application that enables remote submission and monitoring of Claude Code tasks on an EC2 instance from any browser or iOS device.
+
+**Use Case:** Run long-running code analysis, refactoring, or generation tasks on a central server, with a web UI to check progress and view results.
+
+**Status:** Production-ready (v1.0)
+
+## Business Requirements
+
+### Functional Requirements
+
+| Req ID | Requirement | Status |
+|--------|-------------|--------|
+| F1 | User can submit a Claude Code command via web UI | Done |
+| F2 | User receives immediate job ID and can track status | Done |
+| F3 | User can view job logs in real-time via streaming | Done |
+| F4 | User can view job history (list, search, filter) | Done |
+| F5 | Multiple concurrent jobs (worker pool) | Done |
+| F6 | Job timeout and cost limits enforced | Done |
+| F7 | Admin login required (no public access) | Done |
+| F8 | Automatic HTTPS with Let's Encrypt | Done |
+
+### Non-Functional Requirements
+
+| Req ID | Requirement | Status |
+|--------|-------------|--------|
+| N1 | Single EC2 instance (no distributed setup) | Done |
+| N2 | No Docker / minimal ops overhead | Done |
+| N3 | Auto-recovery from crashes (pm2) | Done |
+| N4 | Central config source (system.cfg.json) | Done |
+| N5 | One-command deploy (./start.sh) | Done |
+| N6 | Fast local development (no containerization) | Done |
+
+## System Constraints
+
+### Scale
+- **Concurrent jobs:** Limited by `worker.count` in `system.cfg.json` (default: 2)
+- **Storage:** SQLite single-file database (~100 jobs/sec typical throughput)
+- **Network:** HTTPS via Caddy, SSE for real-time streams
+
+### Security
+- **Admin password = root access** to `work_dir` (treat as SSH key)
+- **No per-user isolation** (single admin account, v2 roadmap)
+- **Claude Code subprocess runs with bypassPermissions** (full shell access to work_dir)
+- **Secrets** (JWT_SECRET, admin password hash, AUTH_SECRET) in gitignored `.env` files
+- **Non-secret config** (ports, hostname, limits) in committed `system.cfg.json`
+
+### Deployment Target
+- **OS:** Amazon Linux 2023, Ubuntu 22.04+, Debian 12+
+- **Packages:** Go 1.22+, Node.js 20+, pnpm, pm2, Caddy 2.8.4+, Claude Code CLI
+- **Network:** Inbound ports 80, 443 open (HTTP/HTTPS)
+- **DNS:** A record required for TLS (Let's Encrypt validation)
+
+## Architecture Overview
+
+```
+End User (iOS/Browser)
+    ↓ HTTPS (via Caddy)
+    ↓
+Next.js Frontend (job submission UI, live log streaming)
+    ↓
+    ├→ Go API Server (REST + SSE streaming)
+    ├→ SQLite (job history, results)
+    └→ Claude Code CLI (subprocess runner on WORK_DIR)
+```
+
+### Technology Stack
+
+| Component | Technology | Notes |
+|-----------|-----------|-------|
+| Backend | Go 1.22+ | Job queue, worker pool, SQLite, SSE |
+| Frontend | Next.js 14+ | React UI, NextAuth v5 (session-based) |
+| Database | SQLite | Single-file, no server setup needed |
+| Process Manager | pm2 | Auto-restart on crash, survives reboot |
+| Reverse Proxy | Caddy 2.8.4+ | HTTPS, Let's Encrypt, SSE passthrough |
+| CLI Runner | Claude Code | Authenticated by ANTHROPIC_API_KEY or OAuth |
+| Config Parser | jq | JSON queries in bash (used by start.sh) |
+
+## Configuration Management
+
+### Single Source of Truth: system.cfg.json
+
+All non-secret configuration flows from this committed JSON file:
+
+```json
+{
+  "hostname": "claudemote.example.com",
+  "api": { "port": 8888 },
+  "web": { "port": 8088 },
+  "worker": {
+    "count": 2,
+    "model": "claude-sonnet-4-6",
+    "permission_mode": "bypassPermissions"
+  },
+  "jobs": {
+    "timeout_min": 30,
+    "max_cost_usd": 1.0,
+    "log_retention_days": 14
+  },
+  "db_path": "/var/lib/claudemote/claudemote.db",
+  "work_dir": "/opt/atomiton/claudemote",
+  "pm2_max_memory": "500M"
+}
+```
+
+Read by:
+- `start.sh` (via jq) — generates Caddyfile, health checks
+- `ecosystem.config.cjs` — injects as env vars into Go and Next.js processes
+
+### Secrets in .env Files
+
+Gitignored, not committed:
+- `backend/.env` — JWT_SECRET, admin password hash, CLAUDE_BIN path
+- `frontend/.env.local` — NextAuth secrets, NEXTAUTH_URL
+
+## Deployment Architecture
+
+### Initial Setup (./start.sh --bootstrap)
+
+3-phase process:
+1. **Phase 1 Discovery** — Detect OS, install tools, prompt for config
+2. **Phase 2 Configure** — Write env files, generate Caddyfile, create DB dirs
+3. **Phase 3 Build & Start** — Compile, start pm2, verify runtime
+
+### Recurring Deploys (./start.sh)
+```bash
+./start.sh  # rebuild backend + frontend, reload pm2
+```
+
+### EC2 Instance Layout
+```
+/opt/atomiton/claudemote/
+├── backend/ (Go source + server binary)
+├── frontend/ (Next.js source + .next/ build)
+├── system.cfg.json (config, committed)
+├── ecosystem.config.cjs (pm2 config)
+├── Caddyfile.template (reverse proxy template)
+├── start.sh (deploy script)
+└── logs/ (pm2 logs)
+
+/var/lib/claudemote/
+└── claudemote.db (SQLite database)
+
+/etc/caddy/
+└── Caddyfile (generated by start.sh, systemd-managed)
+```
+
+## Data Model
+
+### Job (SQLite)
+```sql
+CREATE TABLE jobs (
+  id TEXT PRIMARY KEY,
+  command TEXT NOT NULL,
+  model TEXT,
+  status TEXT,           -- pending, running, done, failed, canceled
+  summary TEXT,
+  logs TEXT,
+  created_at TIMESTAMP,
+  started_at TIMESTAMP,
+  finished_at TIMESTAMP,
+  cost_usd FLOAT
+);
+```
+
+### User (SQLite)
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMP
+);
+```
+
+## API Design
+
+### Authentication
+**POST /api/auth/login** — Username/password → JWT token (stored in HTTP-only cookie by NextAuth)
+
+### Job Submission
+**POST /api/jobs** — Command + model → Job ID (async)
+```json
+{
+  "command": "fix null pointer in auth.go",
+  "model": "claude-sonnet-4-6"
+}
+```
+
+### Job Status & History
+**GET /api/jobs** — List all jobs
+**GET /api/jobs/:id** — Job detail (status, summary, cost)
+**GET /api/jobs/:id/stream** — SSE stream of job events
+
+### Health
+**GET /api/health** — Liveness check (returns 200 OK)
+
+## Key Design Decisions
+
+### 1. Single system.cfg.json
+**Decision:** Unified config file instead of env vars scattered in 12+ places.
+
+**Rationale:**
+- Single source of truth reduces duplication and confusion
+- Easy to audit and review all settings at once
+- Committed to git (safe for non-secrets)
+- Used by both `start.sh` and `ecosystem.config.cjs`
+
+### 2. No Docker
+**Decision:** Caddy + pm2 deployed directly on EC2, no container orchestration.
+
+**Rationale:**
+- Minimal operational overhead (single EC2 instance)
+- Faster iteration during development
+- Direct file I/O to work_dir (Claude Code needs filesystem access)
+- No image building/pushing complexity
+
+### 3. Secrets in .env Files
+**Decision:** `.env` files gitignored, templates committed as `.env.example` and `.env.local.template`.
+
+**Rationale:**
+- Clear separation of secrets from code
+- Consistent with Node.js and Go conventions
+- Bootstrap prompts guide users to generate secrets
+- Less error-prone than inline env var exports
+
+### 4. pm2 for Process Management
+**Decision:** pm2 instead of systemd units for application processes.
+
+**Rationale:**
+- One tool to manage multiple processes (Go API + Next.js)
+- Auto-restart on crash
+- Cluster mode optional for future scaling
+- Easy integration with Node.js frontend
+
+### 5. Caddy for HTTPS & Reverse Proxy
+**Decision:** Caddy instead of nginx, because:
+
+**Rationale:**
+- Auto Let's Encrypt provisioning (no cert management)
+- Flush_interval -1 for SSE passthrough (no buffering)
+- Single binary, minimal config
+- Works on Unix + Linux
+
+## Success Metrics
+
+| Metric | Target | Status |
+|--------|--------|--------|
+| Job submission latency | < 1s | Done |
+| Log streaming latency | < 500ms | Done |
+| Worker pool efficiency | > 90% utilization | Done |
+| Deploy time | < 5 min | Done |
+| Uptime (pm2 + caddy) | > 99.5% | Done |
+| One-command bootstrap | Yes | Done |
+
+## Roadmap (v2 and Beyond)
+
+### v1.1 (Near-term)
+- [ ] Per-user job isolation (multi-user support)
+- [ ] Job templates/presets
+- [ ] Export job logs to JSON/CSV
+
+### v2.0 (Medium-term)
+- [ ] Multi-model switching per job
+- [ ] Docker for work_dir isolation
+- [ ] Database backups + restore
+- [ ] Webhook notifications (job complete)
+
+### v3.0 (Long-term)
+- [ ] Distributed job queue (Redis)
+- [ ] Multiple EC2 workers
+- [ ] Job cost attribution per user
+- [ ] CLI client (submit jobs from terminal)
+
+## Maintenance & Support
+
+### Operational Responsibilities
+- **Secrets rotation** — Update JWT_SECRET, admin password, AUTH_SECRET annually
+- **Claude Code updates** — Ensure `claude` binary stays up-to-date
+- **Caddy cert renewal** — Automatic (no manual action needed)
+- **Database cleanup** — Old job logs auto-purged per `jobs.log_retention_days`
+- **Dependency updates** — Go, Node.js, pnpm, pm2, Caddy (semesterly)
+
+### Troubleshooting Guide
+See `deployment-guide.md` for common issues and fixes.
+
+### Documentation
+- `README.md` — User-facing overview, quick start
+- `system-architecture.md` — Deployment & process architecture
+- `deployment-guide.md` — Bootstrap + deploy procedures
+- `code-standards.md` — Codebase structure, conventions, development workflow
+- This file — Project overview, requirements, design decisions
+
+## Approval & Sign-Off
+
+| Role | Name | Date | Signature |
+|------|------|------|-----------|
+| Product Manager | — | — | — |
+| Technical Lead | — | — | — |
+| DevOps Lead | — | — | — |
+
+---
+
+## Appendix A: Environment Variables
+
+### backend/.env (Secrets)
+| Var | Required | Auto-Generated | Description |
+|-----|----------|-----------------|-------------|
+| JWT_SECRET | Yes | Phase 2 | 64-char hex for signing tokens |
+| ADMIN_USERNAME | Yes | Prompted | Admin login username |
+| ADMIN_PASSWORD_HASH | Yes | Phase 3 | bcrypt hash of admin password |
+| CLAUDE_BIN | Yes | Phase 1 | Path to `claude` binary |
+| DB_PATH | Yes | Prompted | SQLite database file path |
+
+### frontend/.env.local (Secrets)
+| Var | Required | Auto-Generated | Description |
+|-----|----------|-----------------|-------------|
+| AUTH_SECRET | Yes | Phase 2 | 32+ base64 chars for NextAuth JWT |
+| NEXTAUTH_SECRET | Yes | Phase 2 | Alias kept for v4 compat |
+| NEXTAUTH_URL | Yes | Prompted | Public URL of Next.js app |
+| BACKEND_URL | No | Prompted | Server-side API endpoint (usually localhost) |
+
+### system.cfg.json (Non-Secret, Committed)
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| hostname | string | claudemote.example.com | Public domain for HTTPS |
+| api.port | int | 8888 | Go API listen port |
+| web.port | int | 8088 | Next.js listen port |
+| worker.count | int | 2 | Concurrent job workers |
+| worker.model | string | claude-sonnet-4-6 | Default Claude model |
+| worker.permission_mode | string | bypassPermissions | Claude Code permission mode |
+| jobs.timeout_min | int | 30 | Job wall-clock timeout (minutes) |
+| jobs.max_cost_usd | float | 1.0 | Max API cost per job |
+| jobs.log_retention_days | int | 14 | Days to keep job logs |
+| db_path | string | /var/lib/claudemote/claudemote.db | SQLite file path |
+| work_dir | string | /opt/atomiton/claudemote | Repo Claude Code operates on |
+| pm2_max_memory | string | 500M | Memory limit per process (triggers restart) |
+
+## Appendix B: Verification Checklist
+
+### Post-Bootstrap Verification
+- [ ] `./start.sh --bootstrap` completes all 3 phases
+- [ ] `pm2 ls` shows both `claudemote-api` and `claudemote-web` running
+- [ ] `curl http://localhost:8888/api/health` returns 200 OK
+- [ ] `curl http://localhost:8088` returns HTML (Next.js frontend)
+- [ ] Web login as admin works (initial password: Password@123)
+- [ ] Job submission form accessible
+- [ ] Job execution succeeds (worker pool functional)
+- [ ] SSE streaming logs display in real-time
+- [ ] HTTPS cert issued (check `curl https://<hostname>/api/health`)
+
+### Configuration Audit
+- [ ] `system.cfg.json` reviewed for accuracy (ports, hostname, paths)
+- [ ] `backend/.env` contains JWT_SECRET and CLAUDE_BIN path
+- [ ] `frontend/.env.local` contains AUTH_SECRET and NEXTAUTH_URL
+- [ ] No secrets in `system.cfg.json` or git history
+- [ ] DB directory writable (`/var/lib/claudemote/`)
+- [ ] Caddy config valid (`sudo caddy validate --config /etc/caddy/Caddyfile`)
+
+### Security Audit
+- [ ] EC2 security group allows inbound 80, 443 only
+- [ ] Admin password changed from default (Password@123)
+- [ ] No dev/debug endpoints enabled in production
+- [ ] JWT_SECRET is sufficiently random (64+ hex chars)
+- [ ] Claude Code authentication verified (ANTHROPIC_API_KEY or OAuth)
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** 2026-04-13  
+**Next Review:** 2026-10-13

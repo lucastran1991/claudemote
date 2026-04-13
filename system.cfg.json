@@ -1,4 +1,18 @@
 {
-  "api": 8080,
-  "web": 3000
+  "hostname": "claudemote.example.com",
+  "api": { "port": 8888 },
+  "web": { "port": 8088 },
+  "worker": {
+    "count": 2,
+    "model": "claude-sonnet-4-6",
+    "permission_mode": "bypassPermissions"
+  },
+  "jobs": {
+    "timeout_min": 30,
+    "max_cost_usd": 1.0,
+    "log_retention_days": 14
+  },
+  "db_path": "/var/lib/claudemote/claudemote.db",
+  "work_dir": "/opt/atomiton/claudemote",
+  "pm2_max_memory": "500M"
 }

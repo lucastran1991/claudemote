@@ -1,16 +1,5 @@
-# claudemote Caddyfile
-# EDIT THE HOSTNAME below before deploying — replace claudemote.example.com
-# with the actual domain pointing to your EC2 instance.
-# Caddy will auto-provision a Let's Encrypt TLS cert on first request.
-#
-# Deploy:
-#   sudo cp Caddyfile /etc/caddy/Caddyfile
-#   sudo systemctl reload caddy
-#
-# During staging/testing, add this inside the site block to use Let's Encrypt staging:
-#   tls { ca https://acme-staging-v02.api.letsencrypt.org/directory }
-
-claudemote.example.com {
+# Generated from Caddyfile.template by start.sh — DO NOT EDIT DIRECTLY
+{{HOSTNAME}} {
   # Compress everything EXCEPT SSE streams. Caddy's `encode` directive
   # uses a named matcher for exclusion; putting `not` inside the
   # `encode { }` block is parsed as an encoder module name and fails.
@@ -23,7 +12,7 @@ claudemote.example.com {
   # interfere with chunked-transfer SSE semantics.
   @stream path /api/jobs/*/stream
   handle @stream {
-    reverse_proxy localhost:8888 {
+    reverse_proxy localhost:{{API_PORT}} {
       flush_interval -1
       transport http {
         versions 1.1
@@ -33,16 +22,16 @@ claudemote.example.com {
 
   # NextAuth routes must reach Next.js, not the Go backend
   handle /api/auth/* {
-    reverse_proxy localhost:8088
+    reverse_proxy localhost:{{WEB_PORT}}
   }
 
   # All other /api/* requests go to the Go backend without flush override
   handle /api/* {
-    reverse_proxy localhost:8888
+    reverse_proxy localhost:{{API_PORT}}
   }
 
   # Everything else (pages, static assets, Next.js API routes) → Next.js
   handle {
-    reverse_proxy localhost:8088
+    reverse_proxy localhost:{{WEB_PORT}}
   }
 }
