@@ -22,7 +22,7 @@ Secrets (JWT signing key, admin credentials, NextAuth secret) stay in `.env` fil
 ```bash
 cp backend/.env.example backend/.env        # fill in JWT_SECRET, ADMIN_PASSWORD_HASH
 cp frontend/.env.local.template frontend/.env.local   # fill in AUTH_SECRET
-make dev                                    # starts both servers without pm2
+./start.sh                                  # builds + runs in foreground (Ctrl+C to stop)
 ```
 
 API: `http://localhost:8888` | Web: `http://localhost:8088`
@@ -78,7 +78,7 @@ make create-admin
 
 ```bash
 git pull
-./start.sh          # rebuilds backend + frontend, reloads pm2
+./start.sh --prod   # rebuilds backend + frontend, reloads pm2
 ```
 
 Or, if you only want to reload without a full rebuild:

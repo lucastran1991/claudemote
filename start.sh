@@ -77,10 +77,12 @@ err()  { echo -e "${RED}[claudemote]${NC} $1" >&2; }
 
 usage() {
   cat <<EOF
-Usage: ./start.sh [--bootstrap] [--force] [--smoke-test] [--help]
+Usage: ./start.sh [--prod] [--bootstrap] [--force] [--smoke-test] [--help]
 
-  (no flag)     Build + reload pm2 processes (recurring deploy).
-  --bootstrap   First-run 3-phase setup: detect tools, prompt for config,
+  (no flag)     Local mode: build + run in foreground (no pm2/caddy/sudo).
+                Press Ctrl+C to stop. For macOS development.
+  --prod        Production deploy: build + reload pm2 (recurring EC2 deploy).
+  --bootstrap   First-run 3-phase EC2 setup: detect tools, prompt for config,
                 write env files, build, create admin, start services.
                 Run once per fresh EC2.
   --force       With --bootstrap: wipe backend/.env and frontend/.env.local
@@ -151,6 +153,12 @@ fail_phase() {
 
 # ── Recurring deploy helpers (used by both bootstrap and plain deploy) ───────
 
+check_binaries_local() {
+  log "Checking required binaries (local mode)..."
+  require_bin go node pnpm
+  log "All binaries present."
+}
+
 check_binaries() {
   log "Checking required binaries..."
   require_bin go node pnpm pm2 caddy claude
@@ -220,6 +228,32 @@ deploy() {
   build_frontend
   pm2_reload
   print_endpoints
+}
+
+deploy_local() {
+  check_binaries_local
+  check_envs
+  build_backend
+  build_frontend
+
+  log "Starting locally (foreground, Ctrl+C to stop)..."
+  echo ""
+  log "API  → http://localhost:${API_PORT}/api/health"
+  log "Web  → http://localhost:${WEB_PORT}"
+  echo ""
+
+  # Start backend with --verbose for local debugging
+  ( cd backend && ./server --verbose ) &
+  local api_pid=$!
+
+  # Start frontend via pnpm start (uses PORT from env or package.json)
+  ( cd frontend && PORT="${WEB_PORT}" pnpm start ) &
+  local web_pid=$!
+
+  # Clean shutdown on Ctrl+C
+  trap 'log "Shutting down..."; kill $api_pid $web_pid 2>/dev/null; wait; log "Stopped."; exit 0' INT TERM
+
+  wait
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -800,6 +834,7 @@ EOF
 MODE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --prod)        MODE="prod" ;;
     --bootstrap)   MODE="bootstrap" ;;
     --force)       BS_FORCE=1 ;;
     --smoke-test)  BS_SMOKE_TEST=1 ;;
@@ -818,15 +853,24 @@ case "$MODE" in
     print_endpoints
     print_remaining_manual_steps
     ;;
-  help)
-    usage
-    ;;
-  *)
+  prod)
     if [[ "$BS_FORCE" == "1" || "$BS_SMOKE_TEST" == "1" ]]; then
       err "--force and --smoke-test only apply to --bootstrap"
       usage
       exit 1
     fi
     deploy
+    ;;
+  help)
+    usage
+    ;;
+  *)
+    # Default: local mode
+    if [[ "$BS_FORCE" == "1" || "$BS_SMOKE_TEST" == "1" ]]; then
+      err "--force and --smoke-test only apply to --bootstrap"
+      usage
+      exit 1
+    fi
+    deploy_local
     ;;
 esac
