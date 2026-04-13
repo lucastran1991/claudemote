@@ -596,9 +596,14 @@ bs_write_caddyfile() {
 bs_install_caddy_site() {
   log "Installing Caddyfile to /etc/caddy/Caddyfile..."
   sudo cp Caddyfile /etc/caddy/Caddyfile
-  if ! sudo caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+  # Capture stderr so the actual caddy error is visible to the operator
+  # instead of a generic "failed validation" message.
+  local validate_out
+  if ! validate_out="$(sudo caddy validate --config /etc/caddy/Caddyfile 2>&1)"; then
+    err "caddy validate output:"
+    echo "$validate_out" >&2
     fail_phase "Phase 2/3 Configuration" "caddy validate" \
-      "/etc/caddy/Caddyfile failed validation" 20
+      "/etc/caddy/Caddyfile failed validation (see output above)" 20
   fi
   log "  ✓ Caddyfile installed and validated"
 }

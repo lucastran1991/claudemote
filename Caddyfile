@@ -11,9 +11,11 @@
 #   tls { ca https://acme-staging-v02.api.letsencrypt.org/directory }
 
 claudemote.example.com {
-  encode gzip {
-    not path /api/jobs/*/stream
-  }
+  # Compress everything EXCEPT SSE streams. Caddy's `encode` directive
+  # uses a named matcher for exclusion; putting `not` inside the
+  # `encode { }` block is parsed as an encoder module name and fails.
+  @compressible not path /api/jobs/*/stream
+  encode @compressible gzip
 
   # SSE streams: flush_interval -1 disables response buffering so each
   # event is written to the client as soon as the backend emits it.
