@@ -225,9 +225,19 @@ deploy() {
   print_endpoints
 }
 
+stop_pm2_if_running() {
+  # Kill pm2 processes that hold our ports from a prior --prod run
+  if command -v pm2 >/dev/null 2>&1 && pm2 pid claudemote-api >/dev/null 2>&1; then
+    warn "Stopping pm2 processes (from prior --prod run)..."
+    pm2 delete claudemote-api claudemote-web 2>/dev/null || true
+    pm2 save 2>/dev/null || true
+  fi
+}
+
 deploy_local() {
   check_binaries_local
   check_envs
+  stop_pm2_if_running
   build_backend
   # Skip build_frontend — pnpm dev compiles on-the-fly with HMR
 
