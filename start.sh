@@ -733,7 +733,7 @@ bs_verify_end_to_end() {
       "http://localhost:8080/api/jobs/${job_id}" 2>/dev/null || true)"
     status="$(printf '%s' "$job_json" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')"
     case "$status" in
-      completed) log "  ✓ smoke-test job completed"; return 0 ;;
+      done) log "  ✓ smoke-test job completed (status=done)"; return 0 ;;
       failed|canceled)
         warn "  ⚠ smoke-test job ended: $status"
         # Surface the stderr tail stored in the job summary so the operator
