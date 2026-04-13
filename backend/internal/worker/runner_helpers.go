@@ -26,6 +26,10 @@ func buildCmd(jobCtx context.Context, cfg *config.Config, job *model.Job) *exec.
 	cmd := exec.CommandContext(jobCtx,
 		cfg.ClaudeBin,
 		"-p", job.Command,
+		// --verbose is required when combining -p with --output-format=stream-json;
+		// without it claude 2.1.x exits 1 with "requires --verbose" before producing
+		// any output.
+		"--verbose",
 		"--output-format", "stream-json",
 		"--permission-mode", cfg.ClaudePermissionMode,
 		"--model", job.Model,

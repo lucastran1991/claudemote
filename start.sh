@@ -727,13 +727,21 @@ bs_verify_end_to_end() {
   log "  ✓ job created: $job_id"
 
   # Poll for completion (max 60s)
+  local job_json=""
   while (( tries < 30 )); do
-    status="$(curl -fsS -H "authorization: Bearer $token" \
-      "http://localhost:8080/api/jobs/${job_id}" 2>/dev/null \
-      | sed -n 's/.*"status":"\([^"]*\)".*/\1/p' || true)"
+    job_json="$(curl -fsS -H "authorization: Bearer $token" \
+      "http://localhost:8080/api/jobs/${job_id}" 2>/dev/null || true)"
+    status="$(printf '%s' "$job_json" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')"
     case "$status" in
       completed) log "  ✓ smoke-test job completed"; return 0 ;;
-      failed|canceled) warn "  ⚠ smoke-test job ended: $status"; return 0 ;;
+      failed|canceled)
+        warn "  ⚠ smoke-test job ended: $status"
+        # Surface the stderr tail stored in the job summary so the operator
+        # can diagnose the failure without installing sqlite3.
+        local summary
+        summary="$(printf '%s' "$job_json" | sed -n 's/.*"summary":"\([^"]*\)".*/\1/p')"
+        [[ -n "$summary" ]] && warn "    summary: $summary"
+        return 0 ;;
     esac
     sleep 2
     tries=$((tries + 1))
