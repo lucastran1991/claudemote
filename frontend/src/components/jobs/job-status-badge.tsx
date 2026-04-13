@@ -4,11 +4,11 @@ import { cn } from "@/lib/utils"
 import type { JobStatus } from "@/types/api"
 
 const STATUS_STYLES: Record<JobStatus, string> = {
-  pending:   "bg-slate-500/20 text-slate-300 border-slate-500/30",
-  running:   "bg-blue-500/20 text-blue-300 border-blue-500/30 animate-pulse",
-  done:      "bg-green-500/20 text-green-300 border-green-500/30",
-  failed:    "bg-red-500/20 text-red-300 border-red-500/30",
-  cancelled: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  pending:   "bg-[rgba(186,117,23,0.2)] text-[#fac775] border-[rgba(186,117,23,0.3)]",
+  running:   "bg-[rgba(127,119,221,0.2)] text-[#afa9ec] border-[rgba(127,119,221,0.3)] animate-[nexus-pulse_1.4s_infinite]",
+  done:      "bg-[rgba(29,158,117,0.2)] text-[#5dcaa5] border-[rgba(29,158,117,0.3)]",
+  failed:    "bg-[rgba(216,90,48,0.2)] text-[#f0997b] border-[rgba(216,90,48,0.3)]",
+  cancelled: "bg-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.45)] border-[rgba(255,255,255,0.12)]",
 }
 
 const STATUS_LABELS: Record<JobStatus, string> = {

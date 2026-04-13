@@ -39,10 +39,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/30 backdrop-blur-xl p-8 shadow-2xl space-y-6">
+    <div className="glass-dark p-8 shadow-2xl space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-bold text-white">Claudemote</h1>
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-[#afa9ec] to-[#5dcaa5] bg-clip-text text-transparent">Claudemote</h1>
         <p className="text-sm text-white/50">Sign in to continue</p>
       </div>
 
@@ -58,14 +58,14 @@ export default function LoginPage() {
             autoComplete="username"
             {...register("username")}
             className={cn(
-              "w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30",
-              "focus:outline-none focus:ring-2 focus:ring-primary/60",
-              errors.username ? "border-red-400" : "border-white/10"
+              "w-full rounded-[10px] border bg-white/5 px-3 py-2.5 text-[13.5px] text-white placeholder-white/22 transition-all",
+              "focus:outline-none focus:border-[rgba(127,119,221,0.6)] focus:bg-[rgba(127,119,221,0.08)] focus:shadow-[0_0_0_3px_rgba(127,119,221,0.15)]",
+              errors.username ? "border-[rgba(216,90,48,0.6)] bg-[rgba(216,90,48,0.07)]" : "border-white/10"
             )}
             placeholder="admin"
           />
           {errors.username && (
-            <p className="text-xs text-red-400">{errors.username.message}</p>
+            <p className="text-xs text-[#f0997b]">{errors.username.message}</p>
           )}
         </div>
 
@@ -80,20 +80,20 @@ export default function LoginPage() {
             autoComplete="current-password"
             {...register("password")}
             className={cn(
-              "w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30",
-              "focus:outline-none focus:ring-2 focus:ring-primary/60",
-              errors.password ? "border-red-400" : "border-white/10"
+              "w-full rounded-[10px] border bg-white/5 px-3 py-2.5 text-[13.5px] text-white placeholder-white/22 transition-all",
+              "focus:outline-none focus:border-[rgba(127,119,221,0.6)] focus:bg-[rgba(127,119,221,0.08)] focus:shadow-[0_0_0_3px_rgba(127,119,221,0.15)]",
+              errors.password ? "border-[rgba(216,90,48,0.6)] bg-[rgba(216,90,48,0.07)]" : "border-white/10"
             )}
             placeholder="••••••••"
           />
           {errors.password && (
-            <p className="text-xs text-red-400">{errors.password.message}</p>
+            <p className="text-xs text-[#f0997b]">{errors.password.message}</p>
           )}
         </div>
 
         {/* Server error */}
         {serverError && (
-          <p className="text-xs text-red-400 text-center">{serverError}</p>
+          <p className="text-xs text-[#f0997b] text-center">{serverError}</p>
         )}
 
         {/* Submit */}
@@ -101,9 +101,10 @@ export default function LoginPage() {
           type="submit"
           disabled={isSubmitting}
           className={cn(
-            "w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground",
-            "hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/60",
-            "disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            "w-full rounded-[10px] bg-gradient-to-br from-[#7f77dd] to-[#534ab7] px-4 py-3 text-sm font-medium text-white",
+            "hover:from-[#afa9ec] hover:to-[#7f77dd] hover:-translate-y-px hover:shadow-[0_8px_24px_rgba(127,119,221,0.35)]",
+            "focus:outline-none focus:shadow-[0_0_0_3px_rgba(127,119,221,0.15)]",
+            "disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           )}
         >
           {isSubmitting ? "Signing in…" : "Sign in"}

@@ -40,6 +40,23 @@
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
+  /* Nexus palette for Tailwind utilities */
+  --color-purple: var(--purple);
+  --color-purple-l: var(--purple-l);
+  --color-purple-d: var(--purple-d);
+  --color-teal: var(--teal);
+  --color-teal-l: var(--teal-l);
+  --color-teal-d: var(--teal-d);
+  --color-coral: var(--coral);
+  --color-coral-l: var(--coral-l);
+  --color-coral-d: var(--coral-d);
+  --color-nxpink: var(--pink);
+  --color-nxpink-l: var(--pink-l);
+  --color-nxamber: var(--amber);
+  --color-nxamber-l: var(--amber-l);
+  --color-nxamber-d: var(--amber-d);
+  --color-nxblue: var(--blue);
+  --color-nxblue-l: var(--blue-l);
 }
 
 /* Light mode design tokens */
@@ -104,6 +121,32 @@
   --sidebar-accent-foreground: #afa9ec;
   --sidebar-border: rgba(255, 255, 255, 0.08);
   --sidebar-ring: rgba(127, 119, 221, 0.6);
+  /* Nexus extended palette */
+  --purple: #7f77dd;
+  --purple-l: #afa9ec;
+  --purple-d: #534ab7;
+  --teal: #1d9e75;
+  --teal-l: #5dcaa5;
+  --teal-d: #0f6e56;
+  --coral: #d85a30;
+  --coral-l: #f0997b;
+  --coral-d: #993c1d;
+  --pink: #d4537e;
+  --pink-l: #ed93b1;
+  --amber: #ef9f27;
+  --amber-l: #fac775;
+  --amber-d: #ba7517;
+  --blue: #378add;
+  --blue-l: #85b7eb;
+  /* Glass layers */
+  --glass: rgba(255,255,255,0.07);
+  --glass-border: rgba(255,255,255,0.12);
+  --glass-dark: rgba(0,0,0,0.28);
+  --glass-dark-border: rgba(255,255,255,0.08);
+  /* Text hierarchy */
+  --text: #ffffff;
+  --text-muted: rgba(255,255,255,0.45);
+  --text-hint: rgba(255,255,255,0.28);
 }
 
 @layer base {
@@ -114,6 +157,8 @@
     @apply bg-background text-foreground;
     font-size: 0.9375rem;
     line-height: 1.6;
+    position: relative;
+    z-index: 1;
   }
   .dark body,
   body:is(.dark *) {
@@ -123,4 +168,59 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Two-layer glass system */
+@layer utilities {
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+  }
+  .glass-dark {
+    background: var(--glass-dark);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-dark-border);
+    border-radius: 16px;
+  }
+}
+
+/* Background orbs — fixed blurred circles for depth */
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.25;
+  pointer-events: none;
+  z-index: 0;
+}
+.orb-purple {
+  width: 600px;
+  height: 600px;
+  background: #7f77dd;
+  top: -180px;
+  left: -150px;
+}
+.orb-teal {
+  width: 420px;
+  height: 420px;
+  background: #1d9e75;
+  bottom: -100px;
+  right: -80px;
+}
+.orb-pink {
+  width: 280px;
+  height: 280px;
+  background: #d4537e;
+  top: 45%;
+  right: 160px;
+}
+
+/* Nexus keyframes */
+@keyframes nexus-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }

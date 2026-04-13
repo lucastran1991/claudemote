@@ -30,15 +30,16 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
+          // Nexus dark glass toast styling
+          "--normal-bg": "rgba(10,8,30,0.85)",
           "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--normal-border": "rgba(255,255,255,0.12)",
+          "--border-radius": "14px",
         } as React.CSSProperties
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast backdrop-blur-[20px] shadow-[0_16px_40px_rgba(0,0,0,0.4)]",
         },
       }}
       {...props}

@@ -19,6 +19,10 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        {/* Background orbs for Nexus glass depth */}
+        <div className="orb orb-purple" aria-hidden="true" />
+        <div className="orb orb-teal" aria-hidden="true" />
+        <div className="orb orb-pink" aria-hidden="true" />
         <SessionProvider>
           <ThemeProvider>
             <QueryProvider>{children}</QueryProvider>
