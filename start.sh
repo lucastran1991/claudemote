@@ -202,15 +202,17 @@ bootstrap_backend_env() {
   local jwt workdir claude_bin
   jwt="$(openssl rand -hex 32)"
 
-  # Auto-detect claude binary — writes absolute path so pm2/systemd don't
-  # need a populated PATH at runtime.
+  # Auto-detect claude binary — writes the absolute path reported by
+  # `command -v`, which is already under ~/.local/bin or similar. We
+  # deliberately do NOT resolve symlinks: Claude Code's installer uses
+  # ~/.local/bin/claude → versions/X.Y.Z as the upgrade pivot, so keeping
+  # the symlink means version upgrades flow through without re-running
+  # bootstrap.
   claude_bin="$(command -v claude || true)"
   if [[ -z "$claude_bin" ]]; then
     err "claude binary not found in PATH. Install Claude Code before bootstrapping."
     exit 1
   fi
-  # Resolve symlinks and ~ so the written path is fully absolute.
-  claude_bin="$(readlink -f "$claude_bin" 2>/dev/null || echo "$claude_bin")"
 
   # WORK_DIR is the codebase Claude jobs will read/write/run commands in.
   # Default = self-hosting mode: claudemote operates on its own source.
