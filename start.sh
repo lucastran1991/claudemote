@@ -13,6 +13,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+# Production-facing paths the bootstrap writes into backend/.env so that
+# create-admin (bootstrap-time) and the pm2-managed server (runtime) open
+# the same database file. Keep in sync with ecosystem.config.cjs.
+PROD_DB_PATH="/var/lib/claudemote/claudemote.db"
+
+# Set by bootstrap_caddy_hostname when the user accepts a hostname; read by
+# bootstrap_frontend_env to suggest https://$hostname as NEXTAUTH_URL.
+CADDY_HOSTNAME=""
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -84,11 +93,11 @@ check_binaries() {
 
 check_envs() {
   if [[ ! -f backend/.env ]]; then
-    err "backend/.env is missing — run: ./start.sh bootstrap"
+    err "backend/.env is missing — run: ./start.sh --bootstrap"
     exit 1
   fi
   if [[ ! -f frontend/.env.local ]]; then
-    err "frontend/.env.local is missing — run: ./start.sh bootstrap"
+    err "frontend/.env.local is missing — run: ./start.sh --bootstrap"
     exit 1
   fi
 }
@@ -220,12 +229,15 @@ bootstrap_backend_env() {
   if [[ "$workdir" == "$ROOT" ]]; then
     info "Self-hosting mode: claudemote will operate on its own source tree."
   fi
-  # Portable in-place sed (creates .bak on both macOS and GNU; cleaned after)
+  # Portable in-place sed (creates .bak on both macOS and GNU; cleaned after).
+  # DB_PATH is pinned to the production absolute path so create-admin and the
+  # runtime server use the same database (pm2 env no longer overrides it).
   sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${jwt}|" backend/.env
   sed -i.bak "s|^WORK_DIR=.*|WORK_DIR=${workdir}|" backend/.env
   sed -i.bak "s|^CLAUDE_BIN=.*|CLAUDE_BIN=${claude_bin}|" backend/.env
+  sed -i.bak "s|^DB_PATH=.*|DB_PATH=${PROD_DB_PATH}|" backend/.env
   rm -f backend/.env.bak
-  log "backend/.env written (JWT_SECRET generated, WORK_DIR=${workdir}, CLAUDE_BIN=${claude_bin})."
+  log "backend/.env written (JWT_SECRET generated, WORK_DIR=${workdir}, CLAUDE_BIN=${claude_bin}, DB_PATH=${PROD_DB_PATH})."
 }
 
 bootstrap_frontend_env() {
@@ -237,9 +249,17 @@ bootstrap_frontend_env() {
 
   log "Generating frontend/.env.local..."
   cp frontend/.env.local.template frontend/.env.local
-  local secret nextauth_url backend_url
+  local secret nextauth_url nextauth_default backend_url
   secret="$(openssl rand -base64 32)"
-  nextauth_url="$(prompt 'Public URL of the Next.js app (NEXTAUTH_URL)' 'http://localhost:3000')"
+
+  # If the operator just chose a Caddy hostname, suggest it as the public URL
+  # so NextAuth generates redirects and session cookies for the right origin.
+  if [[ -n "$CADDY_HOSTNAME" ]]; then
+    nextauth_default="https://${CADDY_HOSTNAME}"
+  else
+    nextauth_default="http://localhost:3000"
+  fi
+  nextauth_url="$(prompt 'Public URL of the Next.js app (NEXTAUTH_URL)' "$nextauth_default")"
   backend_url="$(prompt 'Backend URL for server-side fetch (BACKEND_URL)' 'http://localhost:8080')"
   sed -i.bak "s|^AUTH_SECRET=.*|AUTH_SECRET=${secret}|" frontend/.env.local
   sed -i.bak "s|^NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET=${secret}|" frontend/.env.local
@@ -253,27 +273,23 @@ bootstrap_frontend_env() {
 detect_ec2_public_ip() {
   # Detect the host's public IPv4 for the Caddy hostname suggestion.
   # Strategy 1: EC2 IMDSv2 (AL2023 default — requires session token).
-  # Strategy 2: EC2 IMDSv1 (older AMIs that allow tokenless reads).
-  # Strategy 3: External lookup via api.ipify.org (works off-EC2 too).
-  # Each call has a short timeout so we never block bootstrap waiting on a
-  # network that does not exist.
+  # Strategy 2: External lookup via api.ipify.org (works off-EC2 too).
+  # `-f` makes curl fail on any HTTP error so we never capture an HTML body
+  # into the hostname. Short timeouts keep bootstrap responsive off-network.
   local token ip=""
-  token="$(curl -s -X PUT --max-time 2 \
+  token="$(curl -fsS -X PUT --max-time 2 \
     "http://169.254.169.254/latest/api/token" \
     -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)"
   if [[ -n "$token" ]]; then
-    ip="$(curl -s --max-time 2 \
+    ip="$(curl -fsS --max-time 2 \
       -H "X-aws-ec2-metadata-token: $token" \
       http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
   fi
   if [[ -z "$ip" ]]; then
-    ip="$(curl -s --max-time 2 \
-      http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+    ip="$(curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null || true)"
   fi
-  if [[ -z "$ip" ]]; then
-    ip="$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || true)"
-  fi
-  echo "$ip"
+  # Strip any stray whitespace/newlines
+  echo "${ip//[[:space:]]/}"
 }
 
 bootstrap_caddy_hostname() {
@@ -306,6 +322,7 @@ bootstrap_caddy_hostname() {
   fi
   sed -i.bak "s|claudemote.example.com|${hostname}|g" Caddyfile
   rm -f Caddyfile.bak
+  CADDY_HOSTNAME="$hostname"
   log "Caddyfile hostname set to ${hostname}."
   warn "Run: sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy"
 }
@@ -361,8 +378,12 @@ bootstrap() {
   require_bin pnpm caddy
 
   bootstrap_backend_env
-  bootstrap_frontend_env
+  # Ask for the Caddy hostname BEFORE the frontend env so NEXTAUTH_URL can
+  # default to https://<hostname> instead of localhost.
   bootstrap_caddy_hostname
+  bootstrap_frontend_env
+  # DB directory must exist before create-admin opens the SQLite file.
+  ensure_dirs
   log "Building backend (needed for create-admin)..."
   ( cd backend && go build -o server ./cmd/server )
   bootstrap_admin_user

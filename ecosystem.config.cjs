@@ -22,7 +22,8 @@ module.exports = {
         JOB_TIMEOUT_MIN: 30,
         MAX_COST_PER_JOB_USD: 1.0,
         JOB_LOG_RETENTION_DAYS: 14,
-        DB_PATH: "/var/lib/claudemote/claudemote.db",
+        // DB_PATH is read from backend/.env so bootstrap-time create-admin
+        // and runtime server open the same database file.
         // JWT_SECRET and ADMIN_PASSWORD_HASH are injected via backend/.env
       },
       max_memory_restart: "500M",
