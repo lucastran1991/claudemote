@@ -160,17 +160,22 @@ cd backend && go build -o server ./cmd/server
 ### File Organization
 ```
 frontend/
-├── app/
-│   ├── (auth)/              # /login, /logout routes
-│   ├── (main)/              # / (home), protected pages
-│   ├── api/
-│   │   └── auth/[...nextauth]/ # NextAuth route handler
-│   └── layout.tsx           # Root layout
-├── components/              # Reusable React components
-├── lib/
-│   ├── api-client.ts        # Fetch wrapper, token management
-│   └── auth.ts              # NextAuth config
-└── public/                  # Static assets (logo, etc.)
+├── src/
+│   ├── app/
+│   │   ├── (auth)/              # /login, /logout routes
+│   │   ├── (dashboard)/         # / (home), protected pages
+│   │   ├── api/
+│   │   │   └── auth/[...nextauth]/ # NextAuth route handler
+│   │   └── layout.tsx           # Root layout
+│   ├── components/              # Reusable React components
+│   ├── lib/
+│   │   ├── api-client.ts        # Fetch wrapper, token management
+│   │   └── auth.ts              # NextAuth config
+│   ├── providers/               # React context providers
+│   └── types/                   # TypeScript type definitions
+├── public/                      # Static assets (logo, etc.)
+├── .next/                       # Production build (gitignored)
+└── next.config.ts
 ```
 
 ### Key Patterns

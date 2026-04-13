@@ -112,19 +112,21 @@ cd backend && go test ./...
 ## Frontend (Next.js)
 
 ### Entry Point
-**`frontend/app/layout.tsx`** — Root layout, sets up NextAuth session provider.
+**`frontend/src/app/layout.tsx`** — Root layout, sets up NextAuth session provider.
 
 ### Key Routes
 
-**`frontend/app/(auth)/`** — Login/logout pages
+**`frontend/src/app/(auth)/`** — Login/logout pages
 - `/login` — Username/password form
 - `/logout` — Sign-out action
 
-**`frontend/app/(main)/`** — Protected pages (require auth)
-- `/` (home) — Job submission form + history table
+**`frontend/src/app/(dashboard)/`** — Protected pages (require auth)
+- `/dashboard` — Job submission form + history table
+- `/dashboard/jobs` — Job detail page
+- `/dashboard/new` — New job submission page
 - Layout enforces authentication redirect
 
-**`frontend/app/api/auth/[...nextauth]/`** — NextAuth route handler
+**`frontend/src/app/api/auth/[...nextauth]/`** — NextAuth route handler
 - Handles OAuth callbacks, session refresh, CSRF
 
 ### Configuration Flow
@@ -144,14 +146,20 @@ Frontend env vars (from frontend/.env.local): `AUTH_SECRET`, `NEXTAUTH_SECRET`, 
 
 ### Key Components
 
-**`frontend/components/`**
+**`frontend/src/components/`**
 - Job submission form
 - Job history table
 - Status badge, spinner, log viewer
 
-**`frontend/lib/`**
+**`frontend/src/lib/`**
 - `api-client.ts` — Fetch wrapper with token management
 - `auth.ts` — NextAuth v5 config (session provider, credentials flow)
+
+**`frontend/src/providers/`**
+- React context providers (NextAuth session, theme, etc.)
+
+**`frontend/src/types/`**
+- TypeScript type definitions (Job, User, API responses)
 
 ### API Calls
 
